@@ -39,7 +39,7 @@ build: build-arch
 
 binary-indep:
 binary-arch: build-arch
-	$(MAKE) -f $(srctree)/Makefile intdeb-pkg \
+	$(MAKE) -f $(srctree)/Makefile bindeb-pkg \
 	  KERNELRELEASE=$(KDEB_PKGVERSION)-rockchip \
 	  KDEB_PKGVERSION=$(KDEB_PKGVERSION)-$(PATCH_VERSION) \
 	  CROSS_COMPILE=$(CROSS_COMPILE) \
