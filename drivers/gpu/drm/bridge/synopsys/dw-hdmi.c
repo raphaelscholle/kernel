@@ -330,6 +330,10 @@ struct dw_hdmi {
 	bool logo_plug_out;		/* hdmi is plug out when kernel logo */
 	bool update;
 	bool hdr2sdr;			/* from hdr to sdr */
+
+	unsigned int preset_max_hdisplay;
+	unsigned int preset_max_vdisplay;
+	bool preset_as_preferred;
 };
 
 #define HDMI_IH_PHY_STAT0_RX_SENSE \
@@ -3080,6 +3084,17 @@ dw_hdmi_update_hdr_property(struct drm_connector *connector)
 	return ret;
 }
 
+bool dw_hdmi_resolution_within_custom_limit(struct dw_hdmi *dw_hdmi,
+					    unsigned int hdisplay, unsigned int vdisplay)
+{
+	if (dw_hdmi->preset_as_preferred)
+		return true;
+
+	return !dw_hdmi->preset_max_hdisplay ||
+	       !dw_hdmi->preset_max_vdisplay ||
+	       hdisplay * vdisplay <= dw_hdmi->preset_max_hdisplay * dw_hdmi->preset_max_vdisplay;
+}
+
 static int dw_hdmi_connector_get_modes(struct drm_connector *connector)
 {
 	struct dw_hdmi *hdmi = container_of(connector, struct dw_hdmi,
@@ -3091,6 +3106,8 @@ static int dw_hdmi_connector_get_modes(struct drm_connector *connector)
 	struct drm_display_info *info = &connector->display_info;
 	void *data = hdmi->plat_data->phy_data;
 	int i,  ret = 0;
+	struct drm_display_mode *preferred_mode = NULL;
+	struct drm_display_mode *default_mode = NULL;
 
 	memset(metedata, 0, sizeof(*metedata));
 	edid = dw_hdmi_get_edid(hdmi, connector);
@@ -3142,6 +3159,61 @@ static int dw_hdmi_connector_get_modes(struct drm_connector *connector)
 	}
 	dw_hdmi_update_hdr_property(connector);
 	dw_hdmi_check_output_type_changed(hdmi);
+
+	if ((hdmi->preset_max_hdisplay) && (hdmi->preset_max_vdisplay)) {
+#ifdef DEBUG
+#define MODE_DBG(x)		(dev_err(hdmi->dev, "hdisplay: %d vdisplay: %d flags: %x refresh: %d\n", x->hdisplay, x->vdisplay, x->flags, drm_mode_vrefresh(x)))
+#define MODE_MSG(x)		(dev_err(hdmi->dev, x))
+#else
+#define MODE_DBG(x)		{}
+#define MODE_MSG(x)		{}
+#endif
+#define IS_PREFERRED(x) (x->flags & DRM_MODE_TYPE_PREFERRED)
+#define PIXEL_COUNT(x)  (x->hdisplay * x->vdisplay)
+#define IS_BETTER(x, y) ((PIXEL_COUNT(x) <= hdmi->preset_max_hdisplay * hdmi->preset_max_vdisplay && !(x->flags & DRM_MODE_FLAG_INTERLACE) && drm_mode_vrefresh(x) <= 60) && \
+			 (PIXEL_COUNT(x) > PIXEL_COUNT(y) || (PIXEL_COUNT(x) == PIXEL_COUNT(y) && drm_mode_vrefresh(x) >= drm_mode_vrefresh(y)) || PIXEL_COUNT(y) > hdmi->preset_max_hdisplay * hdmi->preset_max_vdisplay || drm_mode_vrefresh(y) > 60))
+
+		// Find default mode
+		list_for_each_entry(mode, &connector->probed_modes, head) {
+			if (IS_PREFERRED(mode)) {
+				default_mode = mode;
+				MODE_MSG("found default_mode\n");
+				MODE_DBG(default_mode);
+				break;
+			}
+		}
+
+		// Provide a sane initial mode for later comparision
+		if (default_mode) {
+			preferred_mode = default_mode;
+			MODE_MSG("preferred_mode = default_mode\n");
+		}
+		else {
+			preferred_mode = list_entry(&connector->probed_modes, struct drm_display_mode, head);
+			MODE_MSG("preferred_mode = connector->probed_modes[0]\n");
+			MODE_DBG(preferred_mode);
+		}
+
+		// Searching for better mode within our criteria
+		list_for_each_entry(mode, &connector->probed_modes, head) {
+			if (IS_BETTER(mode, preferred_mode)) {
+				preferred_mode = mode;
+				MODE_MSG("preferred_mode updated\n");
+				MODE_DBG(preferred_mode);
+			}
+		}
+
+		// Update preferred mode
+		if (!default_mode) {
+			preferred_mode->type |= DRM_MODE_TYPE_PREFERRED;
+			MODE_MSG("missing default_mode, preferred_mode used as default_mode\n");
+		}
+		else if (PIXEL_COUNT(default_mode) > hdmi->preset_max_hdisplay * hdmi->preset_max_vdisplay) {
+			default_mode->type &= ~DRM_MODE_TYPE_PREFERRED;
+			preferred_mode->type |= DRM_MODE_TYPE_PREFERRED;
+			MODE_MSG("default_mode resolution is above limit\n");
+		}
+	}
 
 	return ret;
 }
@@ -4747,6 +4819,10 @@ struct dw_hdmi *dw_hdmi_probe(struct platform_device *pdev,
 	mutex_init(&hdmi->audio_mutex);
 	mutex_init(&hdmi->cec_notifier_mutex);
 	spin_lock_init(&hdmi->audio_lock);
+
+	of_property_read_u32(np, "preset_max_hdisplay", &hdmi->preset_max_hdisplay);
+	of_property_read_u32(np, "preset_max_vdisplay", &hdmi->preset_max_vdisplay);
+	hdmi->preset_as_preferred = of_property_read_bool(np, "preset_as_preferred");
 
 	ddc_node = of_parse_phandle(np, "ddc-i2c-bus", 0);
 	if (ddc_node) {
