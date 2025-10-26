@@ -210,7 +210,6 @@
 	status = "okay";
 	reset-gpios = <&gpio1 RK_PB2 GPIO_ACTIVE_HIGH>;
 	vpcie3v3-supply = <&vcc3v3_sys>;
-	pinctrl-names = "default";
 	pinctrl-0 = <&pcie20m2_pins>;
 };
 
@@ -221,6 +220,8 @@
 
 &i2c2 {
 	status = "okay";
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2c2m1_xfer>;
 	hym8563: hym8563@51 {
 		compatible = "haoyu,hym8563";
 		status = "okay";

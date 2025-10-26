@@ -16,7 +16,7 @@
 
 / {
 	model = "Radxa ROCK3 Model A";
-	compatible = "radxa,rock-3a", "rockchip,rk3568";
+	compatible = "radxa,rock-3a-pcie", "radxa,rock-3a", "rockchip,rk3568";
 
 	fan0: pwm-fan {
 		compatible = "pwm-fan";
@@ -550,6 +550,13 @@
 			mic-in-differential;
 			status = "okay";
 		};
+	};
+
+	eeprom:	at24c16@50 {
+		status = "okay";
+		compatible = "atmel,24c16";
+		reg = <0x50>;
+		pagesize = <16>;
 	};
 };
 
